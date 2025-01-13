@@ -1,0 +1,20 @@
+{
+  "name": "env-check",
+  "version": "1.0.0",
+  "bin": {
+    "env-check": "./index.js"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.26.5",
+    "@babel/traverse": "^7.26.5",
+    "dotenv": "^16.4.7",
+    "ignore": "^7.0.0"
+  },
+  "type": "module",
+  "scripts": {
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.0"
+  }
+}
