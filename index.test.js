@@ -1,102 +1,192 @@
 import { expect, describe, it, beforeEach } from "vitest";
-import { parse } from "@babel/parser";
 import dotenv from "dotenv";
-import path from "path";
-import { fileURLToPath } from "url";
-import { dirname } from "path";
+import { checkFileEnvVars } from "./src/utils";
 
-import { extractEnvVarsFromAST } from "src/utils";
-import { checkEnvVars } from "./src/envChecker";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// Mock file contents
+const mockFiles = {
+  basic: {
+    path: "test/basic/config.js",
+    content: `
+      const apiKey = process.env.API_KEY;
+      const url = process.env.BASE_URL;
+      
+      export const getConfig = () => ({
+        apiKey,
+        url
+      });
+    `,
+  },
+  dotenv: {
+    path: "test/basic/dotenv.js",
+    content: `
+      const config = {
+        var1: process.env.DOTENV_VAR,
+        var2: process.env.ANOTHER_VAR,
+        var3: process.env.NOT_IN_DOTENV
+      };
+      export default config;
+    `,
+  },
+  noEnv: {
+    path: "test/no-env/config.js",
+    content: `
+      const regular = "variable";
+      const obj = { env: "test" };
+      
+      export const getConfig = () => ({
+        regular,
+        obj
+      });
+    `,
+  },
+  typescript: {
+    path: "test/ts/config.ts",
+    content: `
+      interface Config {
+        url: string;
+        port: number;
+      }
+      
+      const apiKey: string = process.env.TS_API_KEY;
+      const config: Config = {
+        url: process.env.TS_BASE_URL,
+        port: parseInt(process.env.TS_PORT || "3000")
+      };
+      
+      export const getConfig = () => ({
+        apiKey,
+        ...config
+      });
+    `,
+  },
+  jsx: {
+    path: "test/react/component.jsx",
+    content: `
+      import React from 'react';
+      
+      const Component = () => {
+        const apiUrl = process.env.REACT_API_URL;
+        const mode = process.env.REACT_APP_MODE;
+        
+        return (
+          <div>
+            <p>API URL: {apiUrl}</p>
+            <p>Mode: {mode}</p>
+          </div>
+        );
+      };
+      
+      export default Component;
+    `,
+  },
+  tsx: {
+    path: "test/react/typed-component.tsx",
+    content: `
+      import React from 'react';
+      
+      interface Props {
+        title: string;
+      }
+      
+      const TypedComponent: React.FC<Props> = ({ title }) => {
+        const apiKey: string = process.env.REACT_APP_API_KEY;
+        const debug: boolean = process.env.REACT_APP_DEBUG === 'true';
+        
+        return (
+          <div>
+            <h1>{title}</h1>
+            <p>API Key: {apiKey}</p>
+            <p>Debug: {debug.toString()}</p>
+          </div>
+        );
+      };
+      
+      export default TypedComponent;
+    `,
+  },
+};
 
 describe("Environment Variables Checker", () => {
   beforeEach(() => {
-    // Reset process.env for each test
     process.env = {};
   });
 
-  describe("extractEnvVarsFromAST", () => {
-    it("should extract environment variables from code", () => {
-      const code = `
-        const apiKey = process.env.API_KEY;
-        const url = process.env.BASE_URL;
-      `;
-      const ast = parse(code, { sourceType: "module" });
-      const envVars = extractEnvVarsFromAST(ast);
+  it("should check variables in a single file", () => {
+    process.env.API_KEY = "test-key";
+    const result = checkFileEnvVars(mockFiles.basic);
 
-      expect(envVars).toContain("API_KEY");
-      expect(envVars).toContain("BASE_URL");
-      expect(envVars).toHaveLength(2);
-    });
-
-    it("should not extract non-environment variables", () => {
-      const code = `
-        const regular = 'variable';
-        const obj = { env: 'test' };
-      `;
-      const ast = parse(code, { sourceType: "module" });
-      const envVars = extractEnvVarsFromAST(ast);
-
-      expect(envVars).toHaveLength(0);
-    });
+    expect(result.found).toContain("API_KEY");
+    expect(result.found).toContain("BASE_URL");
+    expect(result.missing).toContain("BASE_URL");
+    expect(result.missing).not.toContain("API_KEY");
   });
 
-  describe("checkEnvVars", () => {
-    const testProjectPath = path.resolve(__dirname, "test");
-    const testOptions = { exitOnMissing: false };
+  it("should handle TypeScript files", () => {
+    process.env.TS_API_KEY = "test-key";
+    const result = checkFileEnvVars(mockFiles.typescript);
 
-    it("should detect environment variables loaded from .env file", () => {
-      // Load the test .env file
-      dotenv.config({ path: ".env.test" });
+    expect(result.found).toContain("TS_API_KEY");
+    expect(result.found).toContain("TS_BASE_URL");
+    expect(result.found).toContain("TS_PORT");
+    expect(result.missing).toContain("TS_BASE_URL");
+    expect(result.missing).not.toContain("TS_API_KEY");
+  });
 
-      const result = checkEnvVars(testProjectPath);
+  it("should not detect non-environment variables", () => {
+    const result = checkFileEnvVars(mockFiles.noEnv);
 
-      expect(result.found).toEqual([
-        "DOTENV_VAR",
-        "ANOTHER_VAR",
-        "NOT_IN_DOTENV",
-      ]);
-      expect(result.missing).toEqual(["NOT_IN_DOTENV"]);
-      expect(result.isComplete).toBe(false);
+    expect(result.found).toHaveLength(0);
+    expect(result.missing).toHaveLength(0);
+  });
 
-      // Verify the actual values from .env.test
-      expect(process.env.DOTENV_VAR).toBe("loaded-from-dotenv");
-      expect(process.env.ANOTHER_VAR).toBe("also-from-dotenv");
-    });
+  it("should detect environment variables loaded from .env file", () => {
+    dotenv.config({ path: ".env.test" });
+    const result = checkFileEnvVars(mockFiles.dotenv);
 
-    it("should identify missing environment variables", () => {
-      const result = checkEnvVars(testProjectPath);
+    expect(result.found).toContain("DOTENV_VAR");
+    expect(result.found).toContain("ANOTHER_VAR");
+    expect(result.found).toContain("NOT_IN_DOTENV");
+    expect(result.missing).toContain("NOT_IN_DOTENV");
 
-      expect(result.missing).toEqual([
-        "DOTENV_VAR",
-        "ANOTHER_VAR",
-        "NOT_IN_DOTENV",
-      ]);
-      expect(result.found).toEqual([
-        "DOTENV_VAR",
-        "ANOTHER_VAR",
-        "NOT_IN_DOTENV",
-      ]);
-      expect(result.isComplete).toBe(false);
-    });
+    expect(process.env.DOTENV_VAR).toBe("loaded-from-dotenv");
+    expect(process.env.ANOTHER_VAR).toBe("also-from-dotenv");
+  });
 
-    it("should report when all environment variables are set", () => {
-      // Set environment variables
-      process.env.DOTENV_VAR = "test-value";
-      process.env.ANOTHER_VAR = "test-value";
-      process.env.NOT_IN_DOTENV = "test-value";
+  it("should identify missing environment variables", () => {
+    const result = checkFileEnvVars(mockFiles.basic);
 
-      const result = checkEnvVars(testProjectPath);
+    expect(result.missing).toContain("API_KEY");
+    expect(result.missing).toContain("BASE_URL");
+  });
 
-      expect(result.missing).toEqual([]);
-      expect(result.found).toEqual([
-        "DOTENV_VAR",
-        "ANOTHER_VAR",
-        "NOT_IN_DOTENV",
-      ]);
-      expect(result.isComplete).toBe(true);
-    });
+  it("should report when all environment variables are set", () => {
+    process.env.API_KEY = "test-value";
+    process.env.BASE_URL = "test-value";
+
+    const result = checkFileEnvVars(mockFiles.basic);
+
+    expect(result.missing).toEqual([]);
+    expect(result.found).toContain("API_KEY");
+    expect(result.found).toContain("BASE_URL");
+  });
+
+  it("should handle JSX files", () => {
+    process.env.REACT_API_URL = "http://api.example.com";
+    const result = checkFileEnvVars(mockFiles.jsx);
+
+    expect(result.found).toContain("REACT_API_URL");
+    expect(result.found).toContain("REACT_APP_MODE");
+    expect(result.missing).toContain("REACT_APP_MODE");
+    expect(result.missing).not.toContain("REACT_API_URL");
+  });
+
+  it("should handle TSX files", () => {
+    process.env.REACT_APP_API_KEY = "secret-key";
+    const result = checkFileEnvVars(mockFiles.tsx);
+
+    expect(result.found).toContain("REACT_APP_API_KEY");
+    expect(result.found).toContain("REACT_APP_DEBUG");
+    expect(result.missing).toContain("REACT_APP_DEBUG");
+    expect(result.missing).not.toContain("REACT_APP_API_KEY");
   });
 });

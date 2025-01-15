@@ -1,6 +1,13 @@
 {
-  "name": "env-check",
-  "version": "1.0.0",
+  "name": "@tedis/envariant",
+  "version": "1.0.1",
+  "keywords": [
+    "env",
+    "dotenv",
+    "cli",
+    "checker"
+  ],
+  "author": "Tedis Agolli",
   "bin": {
     "env-check": "./index.js"
   },

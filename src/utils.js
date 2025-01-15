@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { createRequire } from "module";
+import { parse } from "@babel/parser";
 
 const require = createRequire(import.meta.url);
 const traverse = require("@babel/traverse").default;
@@ -16,7 +17,12 @@ export function getAllFiles(dirPath, rootDir, ig, files = []) {
     }
     if (fs.statSync(fullPath).isDirectory()) {
       getAllFiles(fullPath, rootDir, ig, files);
-    } else if (fullPath.endsWith(".js")) {
+    } else if (
+      fullPath.endsWith(".js") ||
+      fullPath.endsWith(".ts") ||
+      fullPath.endsWith(".jsx") ||
+      fullPath.endsWith(".tsx")
+    ) {
       files.push(fullPath);
     }
   });
@@ -39,3 +45,33 @@ export function extractEnvVarsFromAST(ast) {
   });
   return Array.from(envVars);
 }
+
+/**
+ * Checks environment variables in a single file and returns found/missing variables
+ * @param {Object} file - File object containing content and path
+ * @param {string} file.content - The content of the file
+ * @param {string} file.path - Path to the file (used to determine file type)
+ * @param {Object} options - Options for checking
+ * @returns {{ found: string[], missing: string[] }} Object containing found and missing env vars
+ */
+export const checkFileEnvVars = (file, options = {}) => {
+  const plugins = [];
+  if (file.path.endsWith(".ts") || file.path.endsWith(".tsx")) {
+    plugins.push("typescript");
+  }
+  if (file.path.endsWith(".jsx") || file.path.endsWith(".tsx")) {
+    plugins.push("jsx");
+  }
+  const ast = parse(file.content, {
+    sourceType: "module",
+    plugins,
+  });
+
+  const envVars = extractEnvVarsFromAST(ast);
+  const missing = envVars.filter((varName) => !process.env[varName]);
+
+  return {
+    found: envVars,
+    missing,
+  };
+};

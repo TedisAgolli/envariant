@@ -15,5 +15,6 @@ console.log("Scanning directory:", projectPath);
 const result = checkEnvVars(projectPath);
 
 if (result.missing.length > 0) {
+  console.error("Missing environment variables:", result.missing);
   process.exit(1);
 }
